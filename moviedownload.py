@@ -1,4 +1,5 @@
 from mega import Mega
+from shutil import copyfile
 from clutch import Client
 from requests import Response
 import json
@@ -22,6 +23,7 @@ class MovieClient:
             username, password)
         self.torrent_client = Client(
             address=ip_addr)
+        self.parent_node_id=''
 
     def get_mega_files(self) -> list:
         files = self.mega.get_files()
@@ -35,6 +37,7 @@ class MovieClient:
         if(not folder_file):
             return []
         file_id = folder_file['h']
+        self.parent_node_id=file_id
         current_movies = []
         for file_key in files:
             file = files[file_key]
@@ -42,6 +45,31 @@ class MovieClient:
                 current_movies.append(file)
 
         return current_movies
+
+    def new_mega_file(self,name:str):
+        done = False
+        while not done:
+
+            files = self.get_mega_files()
+            for file in files:
+                if file['a']['n']==name:
+                    return file
+
+        
+        
+
+    def upload_movie(self,container_dir, movie_dir):
+        # need to zip files and then upload to mega
+        directory = os.path.join(container_dir, movie_dir)
+
+        zip_name = input("Enter zip name: ") + '.zip'
+        zip_p = os.path.join(directory,zip_name)
+
+        subprocess.run(['zip','-r','--password','hotdog',zip_p,directory],stdout=subprocess.DEVNULL)
+     
+        copyfile(zip_p,'/home/vvn1/MEGAsync/'+zip_name)
+
+        return self.new_mega_file()
 
     def select_movie(self):
         movies = self.get_mega_files()
@@ -58,21 +86,27 @@ class MovieClient:
                     return movies[movie_i]
             except:
                 print("Try again")
+        
 
     def add_movie(self):
         thread = threading.Thread(target=self.download_and_upload)
         thread.start()
 
+    def pia_sys_conn_check(self):
+
+        popen = subprocess.Popen(['piactl','get','connectionstate'],stdout=subprocess.PIPE)
+        return popen.communicate()[0].strip().decode('utf-8')
+
     def check_pia(self):
-        sp_res = subprocess.call('piactl get connectionstate')
+        sp_res = self.pia_sys_conn_check()        
         if (sp_res =='Connected'):
             return True
         else:
             i = 0
             while i<5:
-                subprocess.call('piactl connect') 
+                subprocess.run('piactl connect') 
                 time.sleep(1)
-                sp_res = subprocess.call('piactl get connectionstate')
+                sp_res = self.pia_sys_conn_check()        
                 if(sp_res=='Connected'):
                     return True
         return False
@@ -81,9 +115,20 @@ class MovieClient:
         pia_conn =self.check_pia()
         if(not pia_conn):
             return 'Not connected to VPN. Quitting...'
-        file = self.download_torrent()
+        file_ps = self.download_torrent()
+
+        self.upload_movie(file_ps[0],file_ps[1])
 
         pass
+
+    def filter_torrent_by_hash(self,t_hash:str,torrents=None):
+        tor_check= torrents if torrents!=None else self.get_current_torrents()
+        
+        for tor in tor_check:
+            if tor.hash_string == t_hash:
+                return tor
+        return None
+
 
     def download_torrent(self) -> str:
 
@@ -98,14 +143,11 @@ class MovieClient:
             t_hash = response.arguments.torrent_duplicate.hash_string
 
         downloaded = False
+        
         print('\n')
         while(not downloaded):
             torrent=None
-            torrents = self.get_current_torrents()
-            for tor in torrents:
-                if tor.hash_string == t_hash:
-                    torrent = tor
-
+            torrent = self.filter_torrent_by_hash(t_hash)
             if not torrent:
                 raise Exception('No torrent found')
             print('\r%d percent, %d mbs left' % (torrent.percent_done*100, torrent.left_until_done/1000000),end="")
@@ -114,8 +156,8 @@ class MovieClient:
             if(torrent.percent_done==1):
                 downloaded=True
                 print('Download Complete')
+                return [torrent.download_dir,torrent.name]
 
-        pass
 
     def add_torrent(self):
 
@@ -148,8 +190,9 @@ class MovieClient:
 
 
 client = MovieClient()
+client.download_and_upload()
 # client.download_torrent()
-# client.remove_torrents()
+client.remove_torrents()
 # client.get_mega_files()
 
 '''
