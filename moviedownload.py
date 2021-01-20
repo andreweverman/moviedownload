@@ -16,7 +16,11 @@ load_dotenv()
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
 ip_addr = os.getenv("TRANSMISSION_IP")
-class MovieClient:
+movie_dir = os.getenv("MOVIE_DIR")
+
+if not (username and password and ip_addr and movie_dir):
+    raise Exception('Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
+class DownloadClient:
     def __init__(self):
         self.mega_client = Mega()
         self.mega = self.mega_client.login(
@@ -54,6 +58,8 @@ class MovieClient:
             for file in files:
                 if file['a']['n']==name:
                     return file
+            
+            time.sleep(10)
 
         
         
@@ -67,9 +73,10 @@ class MovieClient:
 
         subprocess.run(['zip','-r','--password','hotdog',zip_p,directory],stdout=subprocess.DEVNULL)
      
-        copyfile(zip_p,'/home/vvn1/MEGAsync/'+zip_name)
+        
+        copyfile(zip_p,movie_dir+zip_name)
 
-        return self.new_mega_file()
+        return self.new_mega_file(zip_name)
 
     def select_movie(self):
         movies = self.get_mega_files()
@@ -111,11 +118,11 @@ class MovieClient:
                     return True
         return False
 
-    def download_and_upload(self):
+    def download_and_upload(self,movie_name,torrent_url, zip_name,zip_password):
         pia_conn =self.check_pia()
         if(not pia_conn):
             return 'Not connected to VPN. Quitting...'
-        file_ps = self.download_torrent()
+        file_ps = self.download_torrent(torrent_url)
 
         self.upload_movie(file_ps[0],file_ps[1])
 
@@ -130,9 +137,9 @@ class MovieClient:
         return None
 
 
-    def download_torrent(self) -> str:
+    def download_torrent(self,torrent_url) -> str:
 
-        response = self.add_torrent()
+        response = self.add_torrent(torrent_url)
         if(not response.result == 'success'):
             raise Exception('Torrent add failed')
 
@@ -159,18 +166,20 @@ class MovieClient:
                 return [torrent.download_dir,torrent.name]
 
 
-    def add_torrent(self):
+    def add_torrent(self,torrent_url):
+        try:
+    
+            download_args: TorrentAddArguments = {
+                "filename": torrent_url,
+                "download_dir": '/data/Movies'
+            }
 
-        print("Enter the url for the torrent: ")
-        filename: str = input()
-        download_args: TorrentAddArguments = {
-            "filename": filename,
-            "download_dir": '/data/Movies'
-        }
-
-        response: Response[TorrentAdd] = self.torrent_client.torrent.add(
-            download_args)
-        return response
+            response: Response[TorrentAdd] = self.torrent_client.torrent.add(
+                download_args)
+            return response
+            
+        except Exception as exp:
+            raise Exception('Error adding torrent. Check the that was provided url')
 
     def get_current_torrents(self) -> list:
         response = self.torrent_client.torrent.accessor(all_fields=True)
@@ -186,22 +195,17 @@ class MovieClient:
         else:
             [self.torrent_client.torrent.remove(
                 torrent.id, False) for torrent in torrents]
-            print("%d Torrents removed" % torrents_len)
+            print("%d torrent(s) removed" % torrents_len)
 
 
-client = MovieClient()
-client.download_and_upload()
+# client = DownloadClient()
+# client.download_and_upload()
 # client.download_torrent()
-client.remove_torrents()
+# client.remove_torrents()
 # client.get_mega_files()
 
 '''
 TODO:   
-    
-    add movie 
-        ask for url,make sure PIA is running, download torrent, zip file up, upload to mega
-        
-    status of torrent download
-
     prompt for a movie to delete if no room to add 
+
 '''
