@@ -7,8 +7,7 @@ name = "pypi"
 "mega.py" = "*"
 transmission-clutch = "*"
 python-dotenv = "*"
-flask = "*"
-
+pymongo = "*"
 
 [dev-packages]
 
