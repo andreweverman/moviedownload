@@ -4,10 +4,11 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-deluge-client = "*"
 "mega.py" = "*"
 transmission-clutch = "*"
 python-dotenv = "*"
+flask = "*"
+
 
 [dev-packages]
 

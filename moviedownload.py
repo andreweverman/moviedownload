@@ -2,12 +2,10 @@ from mega import Mega
 from shutil import copyfile
 from clutch import Client
 from requests import Response
-import json
 from clutch.schema.user.method.torrent.add import TorrentAddArguments
 from clutch.schema.user.response.torrent.add import TorrentAdd
 import threading
 import time
-import logging
 import subprocess
 import os
 from dotenv import load_dotenv
