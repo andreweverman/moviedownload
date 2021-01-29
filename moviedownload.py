@@ -12,9 +12,10 @@ import os
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
 ip_addr = os.getenv("TRANSMISSION_IP")
-movie_dir = os.getenv("MOVIE_DIR")
+download_dir = os.getenv("DOWNLOAD_DIR")
+upload_dir = os.getenv("UPLOAD_DIR")
 
-if not (username and password and ip_addr and movie_dir):
+if not (username and password and ip_addr and download_dir and upload_dir):
     raise Exception('Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
 class DownloadClient:
     def __init__(self):
@@ -57,20 +58,15 @@ class DownloadClient:
             
             time.sleep(10)
 
-        
-        
-
-    def upload_movie(self,container_dir, movie_dir):
+    def upload_movie(self, movie_name,zip_name,zip_password):
         # need to zip files and then upload to mega
-        directory = os.path.join(container_dir, movie_dir)
+        full_hard_drive_path = os.path.join(download_dir,movie_name)        
+        hd_zip_name = os.path.join(full_hard_drive_path,zip_name)        
 
-        zip_name = input("Enter zip name: ") + '.zip'
-        zip_p = os.path.join(directory,zip_name)
+        # subprocess.run(['zip','-r','--password',zip_password,full_hard_drive_path],stdout=subprocess.DEVNULL)
+        subprocess.run(['zip','-r','--password',zip_password,hd_zip_name,full_hard_drive_path],stdout=subprocess.DEVNULL)
 
-        subprocess.run(['zip','-r','--password','hotdog',zip_p,directory],stdout=subprocess.DEVNULL)
-     
-        
-        copyfile(zip_p,movie_dir+zip_name)
+        copyfile(os.path.join(full_hard_drive_path,zip_name),os.path.join(upload_dir,zip_name) )
 
         return self.new_mega_file(zip_name)
 
@@ -114,13 +110,18 @@ class DownloadClient:
                     return True
         return False
 
-    def download_and_upload(self,movie_name,torrent_url, zip_name,zip_password):
+    def download_and_upload(self,movie_obj):
+
+        torrent_url= movie_obj['torrentLink']
+        zip_name = movie_obj['zipName'] + '.zip'
+        zip_password = movie_obj['zipPassword']
+
         pia_conn =self.check_pia()
         if(not pia_conn):
             return 'Not connected to VPN. Quitting...'
-        file_ps = self.download_torrent(torrent_url)
+        movie_dir_name = self.download_torrent(torrent_url)
 
-        self.upload_movie(file_ps[0],file_ps[1])
+        self.upload_movie(movie_dir_name,zip_name,zip_password)
 
         pass
 
@@ -159,7 +160,7 @@ class DownloadClient:
             if(torrent.percent_done==1):
                 downloaded=True
                 print('Download Complete')
-                return [torrent.download_dir,torrent.name]
+                return torrent.name
 
 
     def add_torrent(self,torrent_url):
@@ -167,7 +168,7 @@ class DownloadClient:
     
             download_args: TorrentAddArguments = {
                 "filename": torrent_url,
-                "download_dir": '/data/Movies'
+                "download_dir": download_dir
             }
 
             response: Response[TorrentAdd] = self.torrent_client.torrent.add(

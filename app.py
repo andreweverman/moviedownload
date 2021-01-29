@@ -8,7 +8,7 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from random import shuffle
-
+from moviedownload import DownloadClient
 load_dotenv()
 mongo_uri: str = os.getenv("MONGO_URI")
 if not mongo_uri:
@@ -31,6 +31,7 @@ movie =>  movie_download_requests
 '''
 
 mongo_client = MongoClient(mongo_uri)
+download_client =DownloadClient() 
 
 db = mongo_client['vvn1']
 
@@ -38,7 +39,14 @@ db = mongo_client['vvn1']
 guild_doc = db['guilds'].find_one(
     {'$and': [{'premium': True}, {'movie.downloads': {'$not': {'$size': 0}}}]})
 
-chosen_movie_download = guild_doc['movie']['downloads'][0]
+try:
 
-i=0
+    downloads_doc = guild_doc['movie']['downloads']
+    if len(downloads_doc)>0:
+        chosen_movie_download = downloads_doc[0]
+        download_client.download_and_upload(chosen_movie_download)
+
+except Exception:
+    # update the mongo object to have an error in it
+    pass
     
