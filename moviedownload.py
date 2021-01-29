@@ -8,8 +8,6 @@ import threading
 import time
 import subprocess
 import os
-from dotenv import load_dotenv
-load_dotenv()
 
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")

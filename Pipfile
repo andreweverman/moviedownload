@@ -8,8 +8,10 @@ name = "pypi"
 transmission-clutch = "*"
 python-dotenv = "*"
 pymongo = "*"
+dnspython = "*"
 
 [dev-packages]
+autopep8 = "*"
 
 [requires]
 python_version = "3"
