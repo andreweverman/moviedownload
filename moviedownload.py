@@ -1,4 +1,3 @@
-from mega import Mega
 from shutil import copyfile
 from clutch import Client
 from requests import Response
@@ -8,6 +7,8 @@ import threading
 import time
 import subprocess
 import os
+from mongo_util import VVN1MongoClient
+import re
 
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
@@ -18,57 +19,46 @@ upload_dir = os.getenv("UPLOAD_DIR")
 if not (username and password and ip_addr and download_dir and upload_dir):
     raise Exception('Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
 class DownloadClient:
-    def __init__(self):
-        self.mega_client = Mega()
-        self.mega = self.mega_client.login(
-            username, password)
+    def __init__(self,guild_id):
+      
         self.torrent_client = Client(
             address=ip_addr)
         self.parent_node_id=''
+        self.vvn1_mongo_client = VVN1MongoClient()
+        self.guild_id=guild_id
 
-    def get_mega_files(self) -> list:
-        files = self.mega.get_files()
-        folder_file = None
-        for file_key in files:
-            file = files[file_key]
-            if(file['a']['n'] == 'vvn1'):
-                folder_file = file
-                break
-
-        if(not folder_file):
-            return []
-        file_id = folder_file['h']
-        self.parent_node_id=file_id
-        current_movies = []
-        for file_key in files:
-            file = files[file_key]
-            if file['p'] == file_id:
-                current_movies.append(file)
-
-        return current_movies
-
-    def new_mega_file(self,name:str):
-        done = False
-        while not done:
-
-            files = self.get_mega_files()
-            for file in files:
-                if file['a']['n']==name:
-                    return file
-            
-            time.sleep(10)
 
     def upload_movie(self, movie_name,zip_name,zip_password):
         # need to zip files and then upload to mega
+
         full_hard_drive_path = os.path.join(download_dir,movie_name)        
-        hd_zip_name = os.path.join(full_hard_drive_path,zip_name)        
+        hd_zip_name = r"%s"%os.path.join(full_hard_drive_path,zip_name)        
+        upload_path = upload_dir + zip_name
 
-        # subprocess.run(['zip','-r','--password',zip_password,full_hard_drive_path],stdout=subprocess.DEVNULL)
-        subprocess.run(['zip','-r','--password',zip_password,hd_zip_name,full_hard_drive_path],stdout=subprocess.DEVNULL)
+        subprocess.run(['zip','-j', '-r','--password',zip_password,zip_name,full_hard_drive_path],stdout=subprocess.DEVNULL)
+        subprocess.run(['mv', zip_name, hd_zip_name],stdout=subprocess.DEVNULL)
+        
+        upload_command  =  ['mega-put',  hd_zip_name,upload_path]
+        start_time = time.time()    
+        percent = 0
+        with subprocess.Popen(upload_command,stdout=subprocess.PIPE,bufsize=1,universal_newlines=True) as p:
+            for line in p.stdout:
+                if line.startswith("TRANSFERRING"):
+                    match_percent = re.compile(r':\s*(.*)%').findall(line)
+                    new_percent = int(match_percent[0])                    
+                    cur_time = time.time()-start_time
+                    if(not percent==new_percent):                        
+                        percent=new_percent
+                        self.vvn1_mongo_client.update_upload_progress(self.guild_id,self.movie,percent,cur_time)
 
-        copyfile(os.path.join(full_hard_drive_path,zip_name),os.path.join(upload_dir,zip_name) )
-
-        return self.new_mega_file(zip_name)
+        match_link = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+')
+        get_link_command = ['mega-export', '-a',upload_path]
+        with subprocess.Popen(get_link_command,stdout=subprocess.PIPE,bufsize=1,universal_newlines=True) as p:
+            for line in p.stdout:
+                result = re.findall(match_link,line)                
+                if len(result)>0:
+                    return result[0]           
+      
 
     def select_movie(self):
         movies = self.get_mega_files()
@@ -111,9 +101,9 @@ class DownloadClient:
         return False
 
     def download_and_upload(self,movie_obj):
-
+        self.movie = movie_obj
         torrent_url= movie_obj['torrentLink']
-        zip_name = movie_obj['zipName'] + '.zip'
+        zip_name = movie_obj['zipName']
         zip_password = movie_obj['zipPassword']
 
         pia_conn =self.check_pia()
@@ -121,9 +111,10 @@ class DownloadClient:
             return 'Not connected to VPN. Quitting...'
         movie_dir_name = self.download_torrent(torrent_url)
 
-        self.upload_movie(movie_dir_name,zip_name,zip_password)
-
-        pass
+        self.vvn1_mongo_client.download_successful(self.guild_id,self.movie)
+        link =self.upload_movie(movie_dir_name,zip_name,zip_password)        
+        self.vvn1_mongo_client.set_upload_link(self.guild_id,self.movie,link)  
+        self.remove_torrents()
 
     def filter_torrent_by_hash(self,t_hash:str,torrents=None):
         tor_check= torrents if torrents!=None else self.get_current_torrents()
@@ -149,17 +140,18 @@ class DownloadClient:
         downloaded = False
         
         print('\n')
+        start_time= time.time()
         while(not downloaded):
             torrent=None
             torrent = self.filter_torrent_by_hash(t_hash)
             if not torrent:
                 raise Exception('No torrent found')
-            print('\r%d percent, %d mbs left' % (torrent.percent_done*100, torrent.left_until_done/1000000),end="")
+            cur_time = time.time()-start_time
+            self.vvn1_mongo_client.update_download_progress(self.guild_id,self.movie,torrent.percent_done*100,cur_time)
             time.sleep(1)
 
             if(torrent.percent_done==1):
                 downloaded=True
-                print('Download Complete')
                 return torrent.name
 
 
@@ -188,18 +180,13 @@ class DownloadClient:
         torrents = self.get_current_torrents()
         torrents_len = len(torrents)
         if(torrents_len< 1):
-            print('No torrents to remove')
+            pass
         else:
             [self.torrent_client.torrent.remove(
                 torrent.id, False) for torrent in torrents]
-            print("%d torrent(s) removed" % torrents_len)
 
 
-# client = DownloadClient()
-# client.download_and_upload()
-# client.download_torrent()
-# client.remove_torrents()
-# client.get_mega_files()
+    
 
 '''
 TODO:   
