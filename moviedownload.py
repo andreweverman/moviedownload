@@ -9,6 +9,8 @@ import subprocess
 import os
 from mongo_util import VVN1MongoClient
 import re
+import sys
+import pexpect
 
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
@@ -31,25 +33,50 @@ class DownloadClient:
     def upload_movie(self, movie_name,zip_name,zip_password):
         # need to zip files and then upload to mega
 
-        full_hard_drive_path = os.path.join(download_dir,movie_name)        
-        hd_zip_name = r"%s"%os.path.join(full_hard_drive_path,zip_name)        
+        self.vvn1_mongo_client.update_uploading_status(self.guild_id,self.movie,True)
+        full_hard_drive_path = os.path.join(download_dir,movie_name)                
+        # hd_zip_name = r"%s"%os.path.join(full_hard_drive_path,zip_name)        
+        hd_zip_name = os.path.join(full_hard_drive_path,zip_name)
         upload_path = upload_dir + zip_name
 
         subprocess.run(['zip','-j', '-r','--password',zip_password,zip_name,full_hard_drive_path],stdout=subprocess.DEVNULL)
         subprocess.run(['mv', zip_name, hd_zip_name],stdout=subprocess.DEVNULL)
         
-        upload_command  =  ['mega-put',  hd_zip_name,upload_path]
+        hd_zip_name_f = hd_zip_name.replace(' ', r'\ ')
+        upload_command  =  ' '.join(['mega-put',  hd_zip_name_f,upload_path])
         start_time = time.time()    
         percent = 0
-        with subprocess.Popen(upload_command,stdout=subprocess.PIPE,bufsize=1,universal_newlines=True) as p:
-            for line in p.stdout:
-                if line.startswith("TRANSFERRING"):
-                    match_percent = re.compile(r':\s*(.*)%').findall(line)
-                    new_percent = int(match_percent[0])                    
-                    cur_time = time.time()-start_time
-                    if(not percent==new_percent):                        
+
+        thread = pexpect.spawn(upload_command)
+        cpl = thread.compile_pattern_list([pexpect.EOF, '\d+\.\d+\s*%'])
+        p_regex = re.compile(r'\d+\.\d+')
+
+        while True:
+            i = thread.expect_list(cpl,timeout=None)
+            if i==0:
+                break
+            elif i==1:
+                output = thread.match.group(0).decode('utf-8')
+                matched = re.findall(p_regex,output)                
+                new_percent = float(matched[0])                       
+                cur_time = int(time.time()-start_time)
+                if percent!=new_percent:                        
                         percent=new_percent
                         self.vvn1_mongo_client.update_upload_progress(self.guild_id,self.movie,percent,cur_time)
+            else:
+                output = thread.match.group(0).decode('utf-8')
+                print(output)
+
+
+        # with subprocess.Popen(upload_command,stdout=subprocess.PIPE,bufsize=1,universal_newlines=True) as p:
+        #     for line in p.stdout:
+        #         if line.startswith("TRANSFERRING"):
+        #             match_percent = re.compile(r':\s*(.*)%').findall(line)
+        #             new_percent = int(match_percent[0])                    
+        #             cur_time = time.time()-start_time
+        #             if(not percent==new_percent):                        
+        #                 percent=new_percent
+        #                 self.vvn1_mongo_client.update_upload_progress(self.guild_id,self.movie,percent,cur_time)
 
         match_link = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+')
         get_link_command = ['mega-export', '-a',upload_path]
@@ -146,14 +173,18 @@ class DownloadClient:
             torrent = self.filter_torrent_by_hash(t_hash)
             if not torrent:
                 raise Exception('No torrent found')
-            cur_time = time.time()-start_time
-            self.vvn1_mongo_client.update_download_progress(self.guild_id,self.movie,torrent.percent_done*100,cur_time)
+            cur_time = int(time.time()-start_time)
+            self.vvn1_mongo_client.update_download_progress(self.guild_id,self.movie,round(torrent.percent_done*100,1),cur_time)
             time.sleep(1)
 
             if(torrent.percent_done==1):
                 downloaded=True
                 return torrent.name
 
+            if(cur_time > 200 and torrent.percent_done==0):
+                self.vvn1_mongo_client.download_error(self.guild_id,self.movie)
+                raise 'Error downloading'
+                
 
     def add_torrent(self,torrent_url):
         try:

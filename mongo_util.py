@@ -71,7 +71,7 @@ class VVN1MongoClient:
         return self.guilds.update_one(
             self.match_movie(guild_id, movie),
             {'$set': {
-                self.uploaded: True,
+                self.uploaded: True,                
                 self.uploading: False,
                 self.error: False,
             }}
@@ -86,7 +86,15 @@ class VVN1MongoClient:
                 self.error: False,
             }}
         )
-
+    def download_error(self, guild_id, movie):
+        return self.guilds.update_one(
+            self.match_movie(guild_id, movie),
+            {'$set': {
+                self.downloading: False,
+                self.downloaded: False,
+                self.error: True,
+            }}
+        )
     def upload_error(self, guild_id, movie):
         return self.guilds.update_one(
             self.match_movie(guild_id, movie),

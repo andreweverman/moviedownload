@@ -10,7 +10,9 @@ import os
 from moviedownload import DownloadClient
 from mongo_util import VVN1MongoClient
 import time
+import subprocess
 
+print("Running")
 upload_dir = os.getenv("UPLOAD_DIR")
 '''
 movie =>  movie_download_requests
@@ -37,16 +39,18 @@ def run():
         for movie in downloads_doc['downloadQueue']:
             try:
 
-                if movie['uploaded'] ==False:
+                if movie['uploaded'] ==False and movie['error'] ==False:
                     download_client = DownloadClient(guild_id)
                     vvn1_client.update_downloading_status(guild_id,movie,True)
-                    download_client.download_and_upload(movie)
-                    vvn1_client.upload_successful(guild_id,movie)
+                    res = download_client.download_and_upload(movie)
+                    if (res!=False):
+                        vvn1_client.upload_successful(guild_id,movie)
                     break
 
             except Exception as e:
                 # update the mongo object to have an error in it
-                vvn1_client.upload_error(guild_id,movie)
+                if not e == 'Error downloading':
+                    vvn1_client.upload_error(guild_id,movie)
                 pass
     
     res2 = vvn1_client.get_delete_zip_names()
@@ -58,7 +62,7 @@ def run():
             guild_id = res2['guild_id']
             for zip_name in downloads_doc['deleteQueue']:
                 res = vvn1_client.remove_zip_name(guild_id,zip_name)
-                os.remove(os.path.join(upload_dir,zip_name))
+                subprocess.Popen(['mega-rm', 'vvn1/%s'%zip_name],stdout=subprocess.DEVNULL)
         except Exception:
             pass
 
