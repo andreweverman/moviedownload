@@ -36,7 +36,7 @@ class VVN1MongoClient:
 
     def get_new_download_request_doc(self):
         guild_doc = self.guilds.find_one(
-            {'$and': [{'premium': True}, {'movie.downloads.downloadQueue': {'$not': {'$size': 0}}}]})
+            {'$and': [{'config.premium': True}, {'movie.downloads.downloadQueue': {'$not': {'$size': 0}}}]})
 
         if guild_doc:
             res = {'guild_id': guild_doc['guild_id'],
@@ -48,7 +48,7 @@ class VVN1MongoClient:
     def get_delete_zip_names(self):
 
         guild_doc = self.guilds.find_one(
-            {'$and': [{'premium': True}, {'movie.downloads.deleteQueue': {'$not': {'$size': 0}}}]})
+            {'$and': [{'config.premium': True}, {'movie.downloads.deleteQueue': {'$not': {'$size': 0}}}]})
 
         if guild_doc:
             res = {'guild_id': guild_doc['guild_id'],

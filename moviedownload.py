@@ -85,6 +85,8 @@ class DownloadClient:
                 result = re.findall(match_link,line)                
                 if len(result)>0:
                     return result[0]           
+
+        self.vvn1_mongo_client.upload_error(self.guild_id,self.movie)
       
 
     def select_movie(self):
