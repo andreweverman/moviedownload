@@ -9,24 +9,13 @@ load_dotenv()
 import os
 from moviedownload import DownloadClient
 from mongo_util import VVN1MongoClient
+from controller import Controller
 import time
 import subprocess
 
 print("Running")
 upload_dir = os.getenv("UPLOAD_DIR")
-'''
-movie =>  movie_download_requests
 
-{
-    user_id:string
-    movie_name:string
-    torrent_url:string
-    torrent_password:string
-    downloaded:boolean
-    currently_uploaded:boolean    
-    prompt_to_make_room:boolean
-}
-'''
 
 def run():
     
@@ -40,9 +29,9 @@ def run():
             try:
 
                 if movie['uploaded'] ==False and movie['error'] ==False:
-                    download_client = DownloadClient(guild_id)
+                    controller = Controller(guild_id)
+                    res = controller.download_and_upload(movie)
                     vvn1_client.update_downloading_status(guild_id,movie,True)
-                    res = download_client.download_and_upload(movie)
                     if (res!=False):
                         vvn1_client.upload_successful(guild_id,movie)
                     break
@@ -66,6 +55,37 @@ def run():
         except Exception:
             pass
 
+    res3 = vvn1_client.get_list_update()
+    if res3:
+        try:
+
+            guild_id = res3['guild_id']
+            download_client = DownloadClient(guild_id)
+            vvn1_client.update_movie_list(guild_id,download_client.view_all_movies())
+        except Exception:
+            pass
+
+
+    res4 = vvn1_client.get_upload_from_archive()
+    
+    if res4:
+        
+        movie_list = res4['movie_list']
+        guild_id = res4['guild_id']
+        for movie in movie_list['downloadQueue']:
+            try:
+                if movie['uploaded'] ==False and movie['error'] ==False:
+                    download_client = DownloadClient(guild_id)
+                    vvn1_client.update_downloading_status(guild_id,movie,True)
+                    res = download_client.download_and_upload(movie)
+                    if (res4!=False):
+                        vvn1_client.upload_successful(guild_id,movie)
+                    break
+            except Exception as e:
+                # update the mongo object to have an error in it
+                if not e == 'Error downloading':
+                    vvn1_client.upload_error(guild_id,movie)
+                pass
 
 while True:
     try:

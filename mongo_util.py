@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 import os
+import datetime
 
 mongo_uri: str = os.getenv("MONGO_URI")
 if not mongo_uri:
@@ -25,6 +26,11 @@ class VVN1MongoClient:
         self.uploading = '%suploading' % self.download_queue_element
         self.upload_percent = '%suploadPercent' % self.download_queue_element
         self.seconds_uploading = '%ssecondsUploading' % self.download_queue_element
+        self.movie_list = 'movie.movie_list'
+        self.movie_list_movies = '%s.movies' % self.movie_list
+        self.movie_list_awaiting_update = '%s.awaiting_update' % self.movie_list
+        self.movie_list_last_updated = '%s.last_updated' % self.movie_list
+        
 
     def match_guild(self, guild_id)->set:
         return {'guild_id': guild_id}
@@ -33,6 +39,30 @@ class VVN1MongoClient:
         obj = self.match_guild(guild_id)
         obj['movie.downloads.downloadQueue._id']=movie['_id']
         return obj
+    
+    def get_list_update(self):
+        guild_doc = self.guilds.find_one(
+            {'$and': [{'config.premium': True}, {'movie.movie_list.awaiting_update':True}]})
+
+        if guild_doc:
+            res = {'guild_id': guild_doc['guild_id'],
+                   'movie_list': guild_doc['movie']['movie_list']}
+        else:
+            res = None
+        return res
+
+    def get_upload_from_archive(self):
+        guild_doc = self.guilds.find_one(
+            {'$and': [{'config.premium': True}, {'movie.movie_list.uploadQueue': {'$not': {'$size': 0}}}]})
+
+        if guild_doc:
+            res = {'guild_id': guild_doc['guild_id'],
+                   'movie_list': guild_doc['movie']['movie_list']}
+        else:
+            res = None
+        return res
+
+    
 
     def get_new_download_request_doc(self):
         guild_doc = self.guilds.find_one(
@@ -133,3 +163,16 @@ class VVN1MongoClient:
 
     def remove_zip_name(self, guild_id, zip_name):
         return self.guilds.update_one({'guild_id': guild_id}, {'$pull': {'movie.downloads.deleteQueue': zip_name}})
+
+
+    def update_movie_list(self,guild_id,movies):
+        return self.guilds.update_one({'guild_id': guild_id},{
+            '$set':{
+                self.movie_list_movies:movies,
+                self.movie_list_awaiting_update:False,
+                self.movie_list_last_updated: datetime.datetime.utcnow()}
+        })
+
+    
+        
+        

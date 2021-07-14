@@ -25,7 +25,6 @@ class DownloadClient:
       
         self.torrent_client = Client(
             address=ip_addr)
-        self.parent_node_id=''
         self.vvn1_mongo_client = VVN1MongoClient()
         self.guild_id=guild_id
 
@@ -35,7 +34,6 @@ class DownloadClient:
 
         self.vvn1_mongo_client.update_uploading_status(self.guild_id,self.movie,True)
         full_hard_drive_path = os.path.join(download_dir,movie_name)                
-        # hd_zip_name = r"%s"%os.path.join(full_hard_drive_path,zip_name)        
         hd_zip_name = os.path.join(full_hard_drive_path,zip_name)
         upload_path = upload_dir + zip_name
 
