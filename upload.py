@@ -28,36 +28,18 @@ class UploadClient:
     def upload_existing(self,movie_obj):
         pass
 
-    def upload(self, movie_path,movie_obj):
+    def upload(self,movie_obj):
         # need to zip files and then upload to mega
-
         self.movie = movie_obj
-        zip_name = movie_obj['zipName']
-        zip_password = movie_obj['zipPassword']
         self.vvn1_mongo_client.update_uploading_status(self.guild_id,self.movie,True)
+        hd_zip_path = self.movie['zipPath']
+        zip_name = os.path.basename(self.movie['zipPath'])
 
-        files = [f.path for f in os.scandir(movie_path) if f.is_file() and f.path.endswith('.zip')]
-        if len(files)>0:
-            #if we find the zip then we make sure it has the name we want
-            hd_zip_name = files[0]           
-            new_name = os.path.join(os.path.dirname(hd_zip_name)  , zip_name)
-            os.rename(hd_zip_name,new_name)
-            hd_zip_name = new_name
-        
-
-        else:
-
-           hd_zip_name = os.path.join(movie_path,zip_name)
-           subprocess.run(['zip','-j', '-r','--password',zip_password,zip_name,movie_path],stdout=subprocess.DEVNULL)
-           subprocess.run(['mv', zip_name, hd_zip_name],stdout=subprocess.DEVNULL)
-        
-        hd_zip_name_f = hd_zip_name.replace(' ', r'\ ')
-
-        if not self.have_room_for_upload(hd_zip_name_f):
-            self.make_room_for_upload(hd_zip_name_f)
+        if not self.have_room_for_upload(hd_zip_path):
+            self.make_room_for_upload(hd_zip_path)
 
         upload_path = upload_dir + zip_name
-        upload_command  =  ' '.join(['mega-put',  hd_zip_name_f,upload_path])
+        upload_command  =  ' '.join(['mega-put',  hd_zip_path.replace(' ', r'\ '),upload_path])
         start_time = time.time()    
         percent = 0
 
@@ -77,7 +59,7 @@ class UploadClient:
                 cur_time = int(time.time()-start_time)
                 if percent!=new_percent:                        
                         percent=new_percent
-                        self.vvn1_mongo_client.update_upload_progress(self.guild_id,self.movie,percent,cur_time)
+                        self.vvn1_mongo_client.update_percent(self.guild_id,self.vvn1_mongo_client.UPLOADING,self.movie,percent,cur_time)
             else:
                 output = thread.match.group(0).decode('utf-8')
                 print(output)
@@ -89,7 +71,7 @@ class UploadClient:
             for line in p.stdout:
                 result = re.findall(match_link,line)                
                 if len(result)>0:
-                    self.vvn1_mongo_client.set_upload_link(self.guild_id,self.movie,result[0])
+                    self.vvn1_mongo_client.upload_successful(self.guild_id,self.movie,result[0],upload_path)
                     return True
 
             return False

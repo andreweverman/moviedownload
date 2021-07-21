@@ -84,7 +84,7 @@ class DownloadClient:
                 if len(result)>0:
                     return result[0]           
 
-        self.vvn1_mongo_client.upload_error(self.guild_id,self.movie)
+        self.vvn1_mongo_client.move_to_error(self.guild_id,self.movie)
       
 
     def select_movie(self):
@@ -174,7 +174,7 @@ class DownloadClient:
             if not torrent:
                 raise Exception('No torrent found')
             cur_time = int(time.time()-start_time)
-            self.vvn1_mongo_client.update_download_progress(self.guild_id,self.movie,round(torrent.percent_done*100,1),cur_time)
+            self.vvn1_mongo_client.update_percent(self.guild_id,self.movie,round(torrent.percent_done*100,1),cur_time)
             time.sleep(1)
 
             if(torrent.percent_done==1):
