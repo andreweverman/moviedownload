@@ -13,6 +13,7 @@ nltk = "*"
 pydictionary = "*"
 parse-torrent-name = "*"
 pronouncing = "*"
+urllib3 = ">=1.26.5"
 
 [dev-packages]
 autopep8 = "*"
