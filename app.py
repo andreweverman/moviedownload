@@ -7,7 +7,6 @@
 from dotenv import load_dotenv
 load_dotenv()
 import os
-from moviedownload import DownloadClient
 from mongo_util import VVN1MongoClient
 from controller import Controller
 import time
@@ -15,10 +14,11 @@ import subprocess
 
 print("Running")
 upload_dir = os.getenv("UPLOAD_DIR")
-
-def run():
+def run(first):
     
     vvn1_client = VVN1MongoClient()
+    if first:
+        vvn1_client.reset_status_on_start()
     download_reqs = vvn1_client.get_download_reqs()
 
     if download_reqs:
@@ -37,7 +37,7 @@ def run():
                 print(e)
                 # update the mongo object to have an error in it
                 if not e == 'Error downloading':
-                    vvn1_client.move_to_error(guild_id,movie)
+                    vvn1_client.move_to_error(vvn1_client.DOWNLOADING, guild_id,movie,e)
                 pass
 
 
@@ -57,7 +57,7 @@ def run():
                 # update the mongo object to have an error in it
                 print(e)
                 if not e == 'Error downloading':
-                    vvn1_client.move_to_error(guild_id,movie)
+                    vvn1_client.move_to_error(vvn1_client.UPLOADING, guild_id,movie,e)
                 pass
     
     
@@ -69,7 +69,7 @@ def run():
         guild_id = uploaded_docs['guild_id']
         for movie in doc:
             try:
-                if movie['removeElement']:
+                if 'removeElement' in movie and movie['removeElement']:
                     upload_path = movie['uploadPath']
                     subprocess.Popen(['mega-rm', upload_path],stdout=subprocess.DEVNULL)
                     vvn1_client.update_upload_deleted(guild_id,movie['_id'])
@@ -81,9 +81,12 @@ def run():
         try:
 
             guild_id = movie_list_update['guild_id']
-            download_client = DownloadClient(guild_id)
-            vvn1_client.update_movie_list(guild_id,download_client.view_all_movies())
-        except Exception:
+            
+            controller = Controller(guild_id)
+            movie_list = controller.update_movie_list()
+            vvn1_client.update_movie_list(guild_id,movie_list)
+        except Exception as e:
+            print(e)
             pass
 
 
@@ -108,9 +111,11 @@ def run():
     #                 vvn1_client.upload_error(guild_id,movie)
     #             pass
 
+run(True)
+time.sleep(10)
 while True:
     try:
-        run()
+        run(False)
         time.sleep(10)
     except Exception as e:
         print(e)

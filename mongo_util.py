@@ -14,7 +14,7 @@ class VVN1MongoClient:
 
     def __init__(self):
         self.mongo_client = MongoClient(mongo_uri,)
-        self.db = self.mongo_client['v2']
+        self.db = self.mongo_client['vvn1']
         self.guilds = self.db['guilds']
 
         self.base = 'movie.downloads'
@@ -32,6 +32,13 @@ class VVN1MongoClient:
 
         self.status_update = '%s.statusUpdate' %self.base
         self.status_update_element = self.status_update+self.element
+        
+        self.error_queue = '%s.errorQueue' %self.base
+
+        self.movie_list = '%s.serverList' %'movie'
+        self.movie_list_movies = '%s.movies' % self.movie_list
+        self.movie_list_awaiting_update = '%s.awaitingUpdate' % self.movie_list
+        self.movie_list_last_updated = '%s.lastUpdated' % self.movie_list
 
         self.in_progress = 'inProgress' 
         self.completed = 'completed' 
@@ -45,6 +52,8 @@ class VVN1MongoClient:
         self.movie_name = 'movieName'
         self.upload_link = 'uploadLink'
         self.upload_path = 'uploadPath'
+
+        self.error = 'error'
 
         self.DOWNLOADING = 'DOWNLOADING'
         self.UPLOADING='UPLOADING'
@@ -63,7 +72,7 @@ class VVN1MongoClient:
 
         arr_path = self.arr_map.get(status)
 
-        self.guilds.update_one(
+        resp = self.guilds.update_one(
             self.match_status(guild_id,_id,status),
             {'$push': {self.status_update:obj},
             '$set':{arr_path+self.element+self.status_update_id:obj['_id']}}
@@ -96,27 +105,14 @@ class VVN1MongoClient:
 
     def get_list_update(self):
         guild_doc = self.guilds.find_one(
-            {'$and': [{'config.premium': True}, {'movie.movie_list.awaiting_update':True}]})
+            {'$and': [{'config.premium': True}, {'movie.serverList.awaitingUpdate':True}]})
 
         if guild_doc:
             res = {'guild_id': guild_doc['guild_id'],
-                   'movie_list': guild_doc['movie']['movie_list']}
+                   'serverList': guild_doc['movie']['serverList']}
         else:
             res = None
         return res
-
-    def get_upload_from_archive(self):
-        guild_doc = self.guilds.find_one(
-            {'$and':[{'config.premium': True}, {'movie.movie_list.uploadQueue': {'$not': {'$size': 0}}}]})
-
-        if guild_doc:
-            res = {'guild_id': guild_doc['guild_id'],
-                   'movie_list': guild_doc['movie']['movie_list']}
-        else:
-            res = None
-        return res
-
-    
 
     def get_download_reqs(self):
         guild_doc = self.guilds.find_one(
@@ -165,8 +161,8 @@ class VVN1MongoClient:
         self.guilds.update_one(self.match_upload_req(guild_id, movie), {
             '$set': {
                 self.upload_queue_element+ self.in_progress: status}})
-
-        return self.guilds.update_one(self.match_status_update(guild_id,movie[self.status_update_id]),
+        if self.status_update_id in movie:
+            return self.guilds.update_one(self.match_status_update(guild_id,movie[self.status_update_id]),
             {'$set':{self.status_update_element + 'status' :self.UPLOADING}}
             )
         
@@ -204,6 +200,7 @@ class VVN1MongoClient:
         obj[self.user_id] = movie[self.user_id]
         obj[self.text_channel_id] = movie[self.text_channel_id]
         obj[self.movie_name] = movie[self.movie_name]
+        obj[self.zip_password] = movie[self.zip_password]
         obj[self.zip_path] = final_dir
         obj[self.percent] = 0
         obj[self.time] = 0
@@ -220,11 +217,6 @@ class VVN1MongoClient:
             self.match_download_req(guild_id, movie),
             {'$set':{self.download_queue_element + 'path':path}}
         )
-
-
-    def move_to_error(self, guild_id, movie):
-        pass
-    
 
     def update_percent(self, guild_id,status, movie, progress, time):
         arr_path = self.arr_map.get(status)
@@ -266,6 +258,37 @@ class VVN1MongoClient:
                 self.movie_list_last_updated: datetime.datetime.utcnow()}
         })
 
-    
+    def move_to_error(self,type,guild_id,obj,error_msg):
+
+        del_path = self.arr_map.get(type)
+
+        error_obj = {}
+        if self.text_channel_id in obj:
+            error_obj[self.text_channel_id] = obj[self.text_channel_id]
+        if self.user_id in obj:
+            error_obj[self.user_id] = obj[self.user_id]
+        if self.movie_name in obj:
+            error_obj[self.movie_name]  = obj[self.movie_name]
+        error_obj[self.error] = str(error_msg)
+
+        return self.guilds.update_one(
+            {'guild_id': guild_id},
+            {'$push':{self.error_queue: error_obj},
+            '$pull':{del_path:{'_id':obj['_id']}}}
+        )
+
+    def reset_status_on_start(self):
+        set_obj = {}
+        for queue in [self.download_queue,self.upload_queue]:
+            set_obj[queue + '.$[].' + self.in_progress ] =False
+        update_obj = {'$set':set_obj}
+        return self.guilds.update_many({'config.premium':True},update_obj)
+
         
-        
+    def update_upload_path_and_password(self,guild_id,movie):
+        return self.guilds.update_one(
+            self.match_upload_req(guild_id, movie),
+            {'$set':
+            {self.upload_queue_element+self.zip_path:movie[self.zip_path],
+            self.upload_queue_element + self.zip_password:movie[self.zip_password]}
+       })

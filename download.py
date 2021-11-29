@@ -1,3 +1,4 @@
+from base import Base
 from shutil import copyfile
 from clutch import Client
 from requests import Response
@@ -24,7 +25,7 @@ if not (username and password and ip_addr and download_dir and upload_dir):
         'Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
 
 
-class DownloadClient:
+class DownloadClient(Base):
     def __init__(self, guild_id):
 
         self.torrent_client = Client(
@@ -36,7 +37,11 @@ class DownloadClient:
         self.movie = movie_obj
         self.vvn1_mongo_client.update_downloading_status(self.guild_id,self.movie,True)
         if not self.vvn1_mongo_client.status_update_id in self.movie:
-            self.movie[self.vvn1_mongo_client.status_update_id] = self.vvn1_mongo_client.create_status_update_obj(self.guild_id,self.movie['_id'],self.vvn1_mongo_client.DOWNLOADING,self.movie['userID'],self.movie['textChannelID'])
+            if 'userID' in self.movie and 'textChannelID' in self.movie:
+                self.movie[self.vvn1_mongo_client.status_update_id] = self.vvn1_mongo_client.create_status_update_obj(self.guild_id,self.movie['_id'],self.vvn1_mongo_client.DOWNLOADING,self.movie['userID'],self.movie['textChannelID'])
+                self.movie
+
+
 
         torrent_url = movie_obj['torrentLink']
 
@@ -49,49 +54,15 @@ class DownloadClient:
             final_dir = self.fix_dir(movie_dir_name)
         else:
             final_dir = self.movie['path']
-        final_dir_formatted = self.zip_movie(final_dir)
+        zip_obj = self.zip_movie(final_dir,self.movie['zipName'],self.movie['zipPassword'],self.movie['movieName'])
+        final_dir_formatted = zip_obj['path']
+        self.movie['zipPassword'] = zip_obj['password']
         self.vvn1_mongo_client.download_successful(self.guild_id, self.movie,final_dir_formatted)
         self.remove_torrents()
         return final_dir
 
 
 
-    def fix_dir(self, outer_dir):
-
-        check_dir = outer_dir
-        first= True
-        first_sub_dir = ''
-        new_outer_name = ''
-
-        while True:
-
-            dirs = [f.path for f in os.scandir(check_dir) if f.is_dir()]            
-            files = [f.path for f in os.scandir(check_dir) if not f.is_dir()]
-
-            if len(dirs) == 1 and len(files) ==0:
-                if first:
-                    first_sub_dir = dirs[0]
-                    first=False
-                check_dir = dirs[0]
-            
-            else:
-                if not first:
-                    new_outer_name = os.path.join(download_dir,os.path.basename(check_dir))
-                    file_list = [f.path for f in os.scandir(check_dir)]
-                    for f in file_list:
-                        shutil.move(f, outer_dir)
-                break
-                
-        if first_sub_dir != '':
-            shutil.rmtree(first_sub_dir)
-        
-        # TODO: can add a prop to the download thing for the dir name in this case
-
-        if not os.path.exists(new_outer_name) and os.path.exists(outer_dir):
-            os.rename(outer_dir,new_outer_name)
-            self.vvn1_mongo_client.add_path_to_drq(self.guild_id,self.movie,new_outer_name)
-
-        return new_outer_name
 
     def select_movie(self):
         movies = self.get_mega_files()
@@ -212,33 +183,6 @@ class DownloadClient:
             [self.torrent_client.torrent.remove(
                 torrent.id, False) for torrent in torrents]
 
-    def zip_movie(self,movie_path):
-        zip_name = self.movie['zipName']
-        zip_password = self.movie['zipPassword']
-
-        files = [f.path for f in os.scandir(movie_path) if f.is_file() and f.path.endswith('.zip')]
-        if len(files)>0:
-            #if we find the zip then we make sure it has the name we want
-            hd_zip_name = files[0]           
-            new_name = os.path.join(os.path.dirname(hd_zip_name)  , zip_name)
-            os.rename(hd_zip_name,new_name)
-            hd_zip_name = new_name
-        
-
-        else:
-
-            hd_zip_name = os.path.join(movie_path,zip_name)
-            zip_command = ['zip','-j','-r']
-            if zip_password!='':
-                zip_command.append('--password')
-                zip_command.append(zip_password)
-            
-            zip_command.append(zip_name)
-            zip_command.append('.')
-
-            subprocess.run(zip_command,stdout=subprocess.DEVNULL,cwd=movie_path)
-        
-        return hd_zip_name
 
 '''
 TODO:   

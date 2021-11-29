@@ -1,3 +1,7 @@
+import PTN
+import nltk
+from PyDictionary import PyDictionary
+from base import Base
 from shutil import copyfile
 from clutch import Client
 from requests import Response
@@ -19,20 +23,40 @@ MAX_MEGA_SIZE = 21474825485
 
 if not (download_dir and upload_dir):
     raise Exception('Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
-class UploadClient:
+class UploadClient(Base):
     def __init__(self,guild_id):
       
         self.vvn1_mongo_client = VVN1MongoClient()
         self.guild_id=guild_id
 
-    def upload_existing(self,movie_obj):
-        pass
-
     def upload(self,movie_obj):
         # need to zip files and then upload to mega
         self.movie = movie_obj
-        self.vvn1_mongo_client.update_uploading_status(self.guild_id,self.movie,True)
-        hd_zip_path = self.movie['zipPath']
+        if not self.vvn1_mongo_client.status_update_id in self.movie:
+            if 'userID' in self.movie and 'textChannelID' in self.movie:
+                self.movie[self.vvn1_mongo_client.status_update_id] = self.vvn1_mongo_client.create_status_update_obj(self.guild_id,self.movie['_id'],self.vvn1_mongo_client.UPLOADING,self.movie['userID'],self.movie['textChannelID'])
+
+        hd_zip_path = ''
+        # check if need to fix dir
+        if 'zipPath' in self.movie:
+            hd_zip_path = self.movie['zipPath']
+        elif 'moviePath' in self.movie:
+            movie_path = self.movie['moviePath']
+            final_dir = self.fix_dir(movie_path)
+            zip_obj = self.zip_movie(final_dir,'',self.movie['zipPassword'],self.movie['movieName'])
+            hd_zip_path = zip_obj['path']
+            self.movie['zipPath'] = hd_zip_path
+            self.movie['zipPassword'] = zip_obj['password']
+            self.vvn1_mongo_client.update_upload_path_and_password(self.guild_id,self.movie)
+        else:
+            raise 'Error: Upload needs a zip path or movie path'
+            
+        if not os.path.exists(hd_zip_path):
+            zip_obj = self.zip_movie(os.path.dirname(hd_zip_path),'',self.movie['zipPassword'],self.movie['movieName'])
+            self.movie['zipPassword'] = zip_obj['password']
+            self.movie['zipPath'] = zip_obj['path']
+            hd_zip_path = zip_obj['path']
+            self.vvn1_mongo_client.update_upload_path_and_password(self.guild_id,self.movie)
         zip_name = os.path.basename(self.movie['zipPath'])
 
         if not self.have_room_for_upload(hd_zip_path):
@@ -133,3 +157,22 @@ class UploadClient:
             subprocess.Popen(['mega-rm', 'vvn1/%s'%u['name']],stdout=subprocess.DEVNULL)
         
         return True
+
+
+    def get_movie_list(self):
+        movie_dirs = []
+        for f in os.scandir(download_dir): 
+            if f.is_dir():
+                obj = {}
+                obj['path'] = f.path
+                spec = self.get_spec_file(f.path)
+                name = ''
+                if spec:
+                    name = spec['movieName']
+                else:
+                    name = PTN.parse(os.path.basename(f.path))['title']
+                obj['name']  = name
+                movie_dirs.append(obj)
+            
+        
+        return sorted(movie_dirs,key = lambda x: x['name'])

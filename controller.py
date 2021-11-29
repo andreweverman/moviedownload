@@ -24,3 +24,9 @@ class Controller:
     def upload(self,movie_obj):
         ul = UploadClient(self.guild_id)
         ul.upload(movie_obj)
+    
+    def update_movie_list(self):
+        ul = UploadClient(self.guild_id)
+        return ul.get_movie_list()
+        
+        

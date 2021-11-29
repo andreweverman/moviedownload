@@ -217,8 +217,6 @@ class DownloadClient:
                 torrent.id, False) for torrent in torrents]
 
 
-    
-
 '''
 TODO:   
     prompt for a movie to delete if no room to add 

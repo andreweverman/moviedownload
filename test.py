@@ -1,4 +1,7 @@
 from upload import UploadClient
 
-ul = UploadClient('')
-ul.make_room_for_upload('/data/Movies/Possessor/Zessor.zip')
+dl = UploadClient('')
+base = '/data/Movies/'
+dir = 'Uncle Boonmee Who Can Recall His Past Lives'
+
+print(dl.new_name(dir))

@@ -9,6 +9,10 @@ transmission-clutch = "*"
 python-dotenv = "*"
 pymongo = "*"
 dnspython = "*"
+nltk = "*"
+pydictionary = "*"
+parse-torrent-name = "*"
+pronouncing = "*"
 
 [dev-packages]
 autopep8 = "*"
