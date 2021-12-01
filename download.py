@@ -97,7 +97,8 @@ class DownloadClient(Base):
         else:
             i = 0
             while i < 5:
-                subprocess.run('piactl connect')
+                popen = subprocess.Popen(
+                ['piactl', 'connect'], stdout=subprocess.PIPE)
                 time.sleep(1)
                 sp_res = self.pia_sys_conn_check()
                 if(sp_res == 'Connected'):

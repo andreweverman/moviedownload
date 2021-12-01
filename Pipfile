@@ -5,18 +5,18 @@ name = "pypi"
 
 [packages]
 "mega.py" = "*"
-transmission-clutch = "*"
 python-dotenv = "*"
 pymongo = "*"
 dnspython = "*"
 nltk = "*"
-pydictionary = "*"
+PyDictionary = "*"
 parse-torrent-name = "*"
 pronouncing = "*"
 urllib3 = ">=1.26.5"
+celery = "*"
 
 [dev-packages]
 autopep8 = "*"
 
 [requires]
-python_version = "3"
+python_version = "3.9"
