@@ -17,19 +17,24 @@ import shutil
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
 ip_addr = os.getenv("TRANSMISSION_IP")
+transmission_username = os.getenv("TRANSMISSION_USERNAME")
+transmission_password = os.getenv("TRANSMISSION_PASSWORD")
 download_dir = os.getenv("DOWNLOAD_DIR")
 upload_dir = os.getenv("UPLOAD_DIR")
 
+
 if not (username and password and ip_addr and download_dir and upload_dir):
     raise Exception(
-        'Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,MOVIE_DIR')
+        'Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,UPLOAD_DIR,DOWNLOAD_DIR')
 
 
 class DownloadClient(Base):
     def __init__(self, guild_id):
 
         self.torrent_client = Client(
-            address=ip_addr)
+            address=ip_addr,
+            username=transmission_username,
+            password=transmission_password)
         self.vvn1_mongo_client = VVN1MongoClient()
         self.guild_id = guild_id
 
@@ -167,7 +172,7 @@ class DownloadClient(Base):
 
         except Exception as exp:
             raise Exception(
-                'Error adding torrent. Check the that was provided url')
+                'Error adding torrent. Check that it was provided url')
 
     def get_current_torrents(self) -> list:
         response = self.torrent_client.torrent.accessor(all_fields=True)

@@ -15,6 +15,8 @@ import pexpect
 username = os.getenv("MEGA_EMAIL")
 password = os.getenv("MEGA_PASSWORD")
 ip_addr = os.getenv("TRANSMISSION_IP")
+transmission_username = os.getenv("TRANSMISSION_USERNAME")
+transmission_password = os.getenv("TRANSMISSION_PASSWORD")
 download_dir = os.getenv("DOWNLOAD_DIR")
 upload_dir = os.getenv("UPLOAD_DIR")
 
@@ -24,7 +26,10 @@ class DownloadClient:
     def __init__(self,guild_id):
       
         self.torrent_client = Client(
-            address=ip_addr)
+            address=ip_addr,
+            username=transmission_username,
+            password=transmission_password)
+
         self.vvn1_mongo_client = VVN1MongoClient()
         self.guild_id=guild_id
 

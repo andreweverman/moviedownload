@@ -1,5 +1,4 @@
 import PTN
-import nltk
 from PyDictionary import PyDictionary
 from base import Base
 from shutil import copyfile

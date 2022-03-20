@@ -16,13 +16,13 @@ from celery import Celery
 
 print("Running")
 broker_url = 'amqp://guest:guest@localhost:5672'
-app = Celery('moviedownload',broker=broker_url)
+app = Celery('tasks',broker=broker_url)
 upload_dir = os.getenv("UPLOAD_DIR")
 vvn1_client = VVN1MongoClient()
 vvn1_client.reset_status_on_start()
 
 @app.on_after_configure.connect
-def setup_periodic_tasks(sender):
+def setup_periodic_tasks(sender,**kwargs):
     sender.add_periodic_task(10.0,download.s(),name='download')
     sender.add_periodic_task(10.0,upload.s(),name='upload')
     sender.add_periodic_task(10.0,delete.s(),name='delete')
