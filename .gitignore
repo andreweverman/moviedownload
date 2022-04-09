@@ -4,4 +4,4 @@
 __pycache__/
 *.pyc
 *.zip
-celerybeat-schedule
+celerybeat-schedule.db
