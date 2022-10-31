@@ -53,7 +53,7 @@ class DownloadClient(Base):
         pia_conn = self.check_pia()
         if(not pia_conn):
             return 'Not connected to VPN. Quitting...'
-        movie_dir_name = self.download_torrent(torrent_url)
+        movie_dir_name,torrent = self.download_torrent(torrent_url)
 
         if 'path' not in self.movie:
             final_dir = self.fix_dir(movie_dir_name)
@@ -63,7 +63,7 @@ class DownloadClient(Base):
         final_dir_formatted = zip_obj['path']
         self.movie['zipPassword'] = zip_obj['password']
         self.vvn1_mongo_client.download_successful(self.guild_id, self.movie,final_dir_formatted)
-        self.remove_torrents()
+        self.remove_torrents(torrent)
         return final_dir
 
 
@@ -146,7 +146,7 @@ class DownloadClient(Base):
 
             if(torrent.percent_done == 1):
                 downloaded = True
-                return full_path
+                return full_path,torrent
                 # return torrent.name
 
             if(cur_time > 200 and torrent.percent_done == 0):
@@ -172,7 +172,7 @@ class DownloadClient(Base):
 
         except Exception as exp:
             raise Exception(
-                'Error adding torrent. Check that it was provided url')
+                f'Error adding torrent. Check that it was provided url\n{exp}')
 
     def get_current_torrents(self) -> list:
         response = self.torrent_client.torrent.accessor(all_fields=True)
@@ -180,14 +180,21 @@ class DownloadClient(Base):
         torrents = response.arguments.torrents
         return torrents
 
-    def remove_torrents(self):
+    def remove_torrents(self,torr=None):
         torrents = self.get_current_torrents()
         torrents_len = len(torrents)
-        if(torrents_len < 1):
-            pass
-        else:
+        if torr:
+            # means we are deleting a specific one
             [self.torrent_client.torrent.remove(
-                torrent.id, False) for torrent in torrents]
+                    torrent.id, False) for torrent in torrents if torr.id == torrent.id]
+
+
+        else:   
+            if(torrents_len < 1):
+                pass
+            else:
+                [self.torrent_client.torrent.remove(
+                    torrent.id, False) for torrent in torrents]
 
 
 '''
