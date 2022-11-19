@@ -1,34 +1,31 @@
-from base import Base
-from shutil import copyfile
+import json
+import uuid
+import shutil
 from clutch import Client
 from requests import Response
 from clutch.schema.user.method.torrent.add import TorrentAddArguments
 from clutch.schema.user.response.torrent.add import TorrentAdd
-import threading
 import time
 import subprocess
 import os
 from mongo_util import VVN1MongoClient
-import re
-import sys
-import pexpect
-import shutil
+import pika
 
-username = os.getenv("MEGA_EMAIL")
-password = os.getenv("MEGA_PASSWORD")
 ip_addr = os.getenv("TRANSMISSION_IP")
 transmission_username = os.getenv("TRANSMISSION_USERNAME")
 transmission_password = os.getenv("TRANSMISSION_PASSWORD")
 download_dir = os.getenv("DOWNLOAD_DIR")
-upload_dir = os.getenv("UPLOAD_DIR")
+broker_url = os.getenv("BROKER_URL")
 
 
-if not (username and password and ip_addr and download_dir and upload_dir):
+
+
+if not (ip_addr and download_dir):
     raise Exception(
         'Must set all environment variables: MEGA_EMAIL,MEGA_PASSWORD,TRANSMISSION_IP,UPLOAD_DIR,DOWNLOAD_DIR')
 
 
-class DownloadClient(Base):
+class DownloadClient():
     def __init__(self, guild_id):
 
         self.torrent_client = Client(
@@ -37,57 +34,29 @@ class DownloadClient(Base):
             password=transmission_password)
         self.vvn1_mongo_client = VVN1MongoClient()
         self.guild_id = guild_id
+        self.download_dir = download_dir
+        params =  pika.URLParameters(broker_url)
+        params.socket_timeout = 5
+        self.connection = pika.BlockingConnection(params)
+        self.channel = self.connection.channel()
+        self.channel.queue_declare('statusUpdate',durable=True)
 
-    def download(self, movie_obj):
-        self.movie = movie_obj
-        self.vvn1_mongo_client.update_downloading_status(self.guild_id,self.movie,True)
-        if not self.vvn1_mongo_client.status_update_id in self.movie:
-            if 'userID' in self.movie and 'textChannelID' in self.movie:
-                self.movie[self.vvn1_mongo_client.status_update_id] = self.vvn1_mongo_client.create_status_update_obj(self.guild_id,self.movie['_id'],self.vvn1_mongo_client.DOWNLOADING,self.movie['userID'],self.movie['textChannelID'])
-                self.movie
-
-
-
-        torrent_url = movie_obj['torrentLink']
+    def download(self, request):
+        
+        request['id'] = str(uuid.uuid4())
+        self.request = request
+        torrent_url = self.request['torrentLink']
 
         pia_conn = self.check_pia()
         if(not pia_conn):
             return 'Not connected to VPN. Quitting...'
         movie_dir_name,torrent = self.download_torrent(torrent_url)
+        final_dir = self.fix_dir(movie_dir_name)
+        self.remove_torrent(torrent)
+        self.turn_off_pia_if_no_more_torrents()
 
-        if 'path' not in self.movie:
-            final_dir = self.fix_dir(movie_dir_name)
-        else:
-            final_dir = self.movie['path']
-        zip_obj = self.zip_movie(final_dir,self.movie['zipName'],self.movie['zipPassword'],self.movie['movieName'])
-        final_dir_formatted = zip_obj['path']
-        self.movie['zipPassword'] = zip_obj['password']
-        self.vvn1_mongo_client.download_successful(self.guild_id, self.movie,final_dir_formatted)
-        self.remove_torrents(torrent)
         return final_dir
 
-
-
-
-    def select_movie(self):
-        movies = self.get_mega_files()
-        movie_str = '\n'.join(["%d: %s" % (i+1, x['a']['n'])
-                               for i, x in enumerate(movies)])
-
-        done = False
-        movie_i = -1
-        while not done:
-            try:
-                user_input = input("Select a movie\n%s\n" % movie_str)
-                movie_i = int(user_input)
-                if(movie_i > 0 and movie_i < len(movies)):
-                    return movies[movie_i]
-            except:
-                print("Try again")
-
-    def add_movie(self):
-        thread = threading.Thread(target=self.download_and_upload)
-        thread.start()
 
     def pia_sys_conn_check(self):
 
@@ -110,6 +79,21 @@ class DownloadClient(Base):
                     return True
         return False
 
+    def turn_off_pia(self):
+        sp_res = self.pia_sys_conn_check()
+        if (sp_res == 'Connected'):
+            i = 0
+            while i < 5:
+                popen = subprocess.Popen(
+                ['piactl', 'disconnect'], stdout=subprocess.PIPE)
+                time.sleep(1)
+                sp_res = self.pia_sys_conn_check()
+                if(sp_res != 'Connected'):
+                    return True
+        else:
+            return True
+        return False
+
     def filter_torrent_by_hash(self, t_hash: str, torrents=None):
         tor_check = torrents if torrents != None else self.get_current_torrents()
 
@@ -123,7 +107,6 @@ class DownloadClient(Base):
         full_path, response = self.add_torrent(torrent_url)
         if(not response.result == 'success'):
             raise Exception('Torrent add failed')
-
         t_hash: str = ''
         if(response.arguments.torrent_added != None):
             t_hash = response.arguments.torrent_added.hash_string
@@ -132,31 +115,28 @@ class DownloadClient(Base):
 
         downloaded = False
 
-        self.vvn1_mongo_client.update_downloading_status(self.guild_id,self.movie,True)
-        start_time = time.time()
         while(not downloaded):
             torrent = None
             torrent = self.filter_torrent_by_hash(t_hash)
             if not torrent:
                 raise Exception('No torrent found')
-            cur_time = int(time.time()-start_time)
-            self.vvn1_mongo_client.update_percent(
-                self.guild_id, self.vvn1_mongo_client.DOWNLOADING, self.movie,round(torrent.percent_done*100, 1), cur_time)
-            time.sleep(1)
+
+            percent_done = round(torrent.percent_done*100, 1)
+            
+            self.send_status_update(percent_done,torrent.eta)
+            time.sleep(3)
 
             if(torrent.percent_done == 1):
                 downloaded = True
+                self.send_status_update(percent_done,torrent.eta)
                 return full_path,torrent
                 # return torrent.name
 
-            if(cur_time > 200 and torrent.percent_done == 0):
-                self.vvn1_mongo_client.download_error(
-                    self.guild_id, self.movie)
-                raise 'Error downloading'
+
 
     def add_torrent(self, torrent_url):
         # encapsulating whatever is torrented one extra level. going to fix before leaving this dl circuit
-        movie_name_no_space = self.movie['movieName'].strip()
+        movie_name_no_space = self.request['movieName'].strip()
         full_dl_dir = os.path.join(download_dir, movie_name_no_space)
 
         try:
@@ -180,7 +160,12 @@ class DownloadClient(Base):
         torrents = response.arguments.torrents
         return torrents
 
-    def remove_torrents(self,torr=None):
+    def turn_off_pia_if_no_more_torrents(self,):
+        if len(self.get_current_torrents()) ==0:
+            self.turn_off_pia()
+
+
+    def remove_torrent(self,torr=None):
         torrents = self.get_current_torrents()
         torrents_len = len(torrents)
         if torr:
@@ -197,8 +182,47 @@ class DownloadClient(Base):
                     torrent.id, False) for torrent in torrents]
 
 
-'''
-TODO:   
-    prompt for a movie to delete if no room to add 
 
-'''
+
+    def fix_dir(self, outer_dir):
+
+        check_dir = outer_dir
+        first= True
+        first_sub_dir = ''
+        new_outer_name = ''
+
+        while True:
+
+            dirs = [f.path for f in os.scandir(check_dir) if f.is_dir()]            
+            files = [f.path for f in os.scandir(check_dir) if not f.is_dir()]
+
+            if len(dirs) == 1 and len(files) ==0:
+                if first:
+                    first_sub_dir = dirs[0]
+                    first=False
+                check_dir = dirs[0]
+            
+            else:
+                if not first:
+                    new_outer_name = os.path.join(self.download_dir,os.path.basename(check_dir))
+                    file_list = [f.path for f in os.scandir(check_dir)]
+                    for f in file_list:
+                        shutil.move(f, outer_dir)
+                break
+                
+        if first_sub_dir != '':
+            shutil.rmtree(first_sub_dir)
+        
+        # TODO: can add a prop to the download thing for the dir name in this case
+
+        if new_outer_name != '' and not os.path.exists(new_outer_name) and os.path.exists(outer_dir):
+            os.rename(outer_dir,new_outer_name)
+            self.vvn1_mongo_client.add_path_to_drq(self.guild_id,self.movie,new_outer_name)
+
+        return new_outer_name if new_outer_name != '' else outer_dir
+
+    def send_status_update(self,percent_done,time_remaining:str):
+        body = self.request.copy()
+        body['percentDone'] = percent_done
+        body['timeRemaining'] = time_remaining
+        self.channel.basic_publish(exchange='',routing_key='statusUpdate',body=json.dumps(body))
