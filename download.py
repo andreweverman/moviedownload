@@ -126,9 +126,9 @@ class DownloadClient():
             self.send_status_update(percent_done,torrent.eta)
             time.sleep(3)
 
-            if(torrent.percent_done == 100):
+            if(torrent.percent_done == 1):
                 downloaded = True
-                self.send_status_update(percent_done,torrent.eta)
+                self.send_status_update(100,torrent.eta)
                 return full_path,torrent
                 # return torrent.name
 
